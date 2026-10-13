@@ -37,7 +37,7 @@ async function getGeminiModel() {
   const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models?key=" + GEMINI_API_KEY, { timeout: 7000 });
   if (!response.ok) throw new Error("Gemini model list HTTP " + response.status);
   const data = await response.json();
-  const available = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent")).map(m => m.name.replace(/^models\\//, ""));
+  const available = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent")).map(m => m.name.startsWith("models/") ? m.name.slice(7) : m.name);
   const preferred = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.6-flash", "gemini-3-flash-preview"];
   const chosen = preferred.find(n => available.includes(n)) || available.find(n => /flash/i.test(n));
   if (!chosen) throw new Error("No compatible Gemini Flash model available");
