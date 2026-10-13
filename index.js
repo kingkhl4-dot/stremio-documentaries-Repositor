@@ -38,8 +38,8 @@ async function getGeminiModel() {
   if (!response.ok) throw new Error("Gemini model list HTTP " + response.status);
   const data = await response.json();
   const available = (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes("generateContent")).map(m => m.name.startsWith("models/") ? m.name.slice(7) : m.name);
-  const preferred = ["gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview"];
-  const chosen = preferred.find(n => available.includes(n)) || available.find(n => /flash/i.test(n));
+  const preferred = ["gemini-3.6-flash"];
+  const chosen = preferred.find(n => available.includes(n));
   if (!chosen) throw new Error("No compatible Gemini Flash model available");
   modelCache = { name: chosen, until: Date.now() + 60 * 60 * 1000 };
   console.log("Gemini translation model:", chosen);
