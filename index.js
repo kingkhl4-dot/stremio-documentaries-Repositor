@@ -198,31 +198,53 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
         ? await tmdb(`/search/${kind}`, `&query=${encodeURIComponent(extra.search)}&page=${page}`)
         : await tmdb(`/discover/${kind}`, `&with_genres=99&sort_by=popularity.desc&page=${page}`);
 
-    // Translate every catalog description, using durable D1 cache to avoid repeat translations.
+    // Load saved descriptions in one D1 query, then translate missing ones in small batches.
     const documentaryItems = (data.results || []).filter(item => (item.genre_ids || []).includes(99));
-    const metas = await Promise.all(
-      documentaryItems.map(async (item, index) => {
-        const key = kind + item.id;
-        let imdb = idCache.get(key);
-        if (!imdb) {
-          const ext = await tmdb(`/${kind}/${item.id}/external_ids`);
-          imdb = ext.imdb_id;
-          if (imdb) idCache.set(key, imdb);
+    const contentIds = documentaryItems.map(item => kind + ":" + item.id);
+    const savedRows = contentIds.length
+      ? await d1Query(
+          "SELECT content_id, arabic_description FROM translations WHERE content_id IN (" + contentIds.map(() => "?").join(",") + ")",
+          contentIds
+        )
+      : [];
+    const savedDescriptions = new Map((savedRows || []).map(row => [row.content_id, row.arabic_description]));
+    const metas = [];
+    // Limit simultaneous Gemini calls to reduce rate-limit errors.
+    for (let i = 0; i < documentaryItems.length; i += 4) {
+      const batch = documentaryItems.slice(i, i + 4);
+      const results = await Promise.all(batch.map(async item => {
+        try {
+          const key = kind + item.id;
+          let imdb = idCache.get(key);
+          if (!imdb) {
+            const ext = await tmdb(`/${kind}/${item.id}/external_ids`);
+            imdb = ext.imdb_id;
+            if (imdb) idCache.set(key, imdb);
+          }
+          if (!imdb) return null;
+          const saved = savedDescriptions.get(kind + ":" + item.id);
+          const description = saved && isArabic(saved)
+            ? saved
+            : await getArabicDescription(kind, item.id, item.overview);
+          return {
+            id: PREFIX + imdb,
+            type,
+            name: item.title || item.name,
+            description,
+            poster: item.poster_path ? IMG + "w500" + item.poster_path : undefined,
+            background: item.backdrop_path ? IMG + "w1280" + item.backdrop_path : undefined,
+            imdbRating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
+            releaseInfo: (item.release_date || item.first_air_date || "").slice(0, 4)
+          };
+        } catch (error) {
+          console.log("Catalog item failed:", error.message);
+          return null;
         }
-        if (!imdb) return null;
-        return {
-          id: PREFIX + imdb,
-          type,
-          name: item.title || item.name,
-          description: await getArabicDescription(kind, item.id, item.overview),
-          poster: item.poster_path ? IMG + "w500" + item.poster_path : undefined,
-          background: item.backdrop_path ? IMG + "w1280" + item.backdrop_path : undefined,
-          imdbRating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
-          releaseInfo: (item.release_date || item.first_air_date || "").slice(0, 4)
-        };
-      })
-    );
-    return { metas: metas.filter(Boolean) };
+      }));
+      metas.push(...results.filter(Boolean));
+    }
+    return { metas };
+
   } catch (e) {
     return { metas: [] };
   }
