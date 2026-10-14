@@ -152,7 +152,10 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
           type,
           name: item.title || item.name,
           description: item.overview,
-          poster: item.poster_path ? IMG + "w500" + item.poster_path : undefined
+          poster: item.poster_path ? IMG + "w500" + item.poster_path : undefined,
+          background: item.backdrop_path ? IMG + "w1280" + item.backdrop_path : undefined,
+          imdbRating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
+          releaseInfo: (item.release_date || item.first_air_date || "").slice(0, 4)
         };
       })
     );
