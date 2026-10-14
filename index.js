@@ -137,8 +137,10 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
         ? await tmdb(`/search/${kind}`, `&query=${encodeURIComponent(extra.search)}&page=${page}`)
         : await tmdb(`/discover/${kind}`, `&with_genres=99&sort_by=popularity.desc&page=${page}`);
 
+    // Trial: translate only the first four catalog descriptions to limit latency and Gemini usage.
+    const documentaryItems = (data.results || []).filter(item => (item.genre_ids || []).includes(99));
     const metas = await Promise.all(
-      (data.results || []).filter(item => (item.genre_ids || []).includes(99)).map(async (item) => {
+      documentaryItems.map(async (item, index) => {
         const key = kind + item.id;
         let imdb = idCache.get(key);
         if (!imdb) {
@@ -151,7 +153,9 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
           id: PREFIX + imdb,
           type,
           name: item.title || item.name,
-          description: item.overview,
+          description: index < 4
+            ? await getArabicDescription(kind, item.id, item.overview)
+            : (trCache.get(item.overview) || item.overview),
           poster: item.poster_path ? IMG + "w500" + item.poster_path : undefined,
           background: item.backdrop_path ? IMG + "w1280" + item.backdrop_path : undefined,
           imdbRating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
